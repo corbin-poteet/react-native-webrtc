@@ -2,6 +2,9 @@
 
 #import "VideoCaptureController.h"
 
+#import <AVFoundation/AVFoundation.h>
+#import <AssetsLibrary/ALAssetsLibrary.h>
+#import <ImageIO/ImageIO.h>
 #import <React/RCTLog.h>
 
 @interface VideoCaptureController ()
@@ -18,6 +21,201 @@
 @end
 
 @implementation VideoCaptureController
+
+typedef NS_ENUM(NSInteger, RCTCameraCaptureTarget) {
+    RCT_CAMERA_CAPTURE_TARGET_MEMORY = 0,
+    RCT_CAMERA_CAPTURE_TARGET_DISK = 1,
+    RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL = 2,
+    RCT_CAMERA_CAPTURE_TARGET_TEMP = 3
+};
+
+// @TODO: use non-deprecated code. good luck.
+AVCaptureStillImageOutput *stillImageOutput = nil;
+
+- (void)takePicture:(NSDictionary *)options successCallback:(RCTResponseSenderBlock)successCallback errorCallback:(RCTResponseSenderBlock)errorCallback {
+    NSInteger captureTarget = [[options valueForKey:@"captureTarget"] intValue];
+    NSInteger maxSize = [[options valueForKey:@"maxSize"] intValue];
+    CGFloat jpegQuality = [[options valueForKey:@"maxJpegQuality"] floatValue];
+    
+    // Clamp jpegQuality between 0 and 1
+    if (jpegQuality < 0) {
+        jpegQuality = 0;
+    } else if (jpegQuality > 1) {
+        jpegQuality = 1;
+    }
+    
+    [stillImageOutput captureStillImageAsynchronouslyFromConnection:[stillImageOutput connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageDataSampleBuffer, NSError *error) {
+        if (imageDataSampleBuffer) {
+            NSData *imageData = [AVCaptureStillImageOutput jpegStillImageNSDataRepresentation:imageDataSampleBuffer];
+            CGImageSourceRef source = CGImageSourceCreateWithData((CFDataRef)imageData, NULL);
+            NSMutableDictionary *imageMetadata = [(NSDictionary *)CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source, 0, NULL)) mutableCopy];
+            CGImageRef CGImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+            CGImage = [self resizeCGImage:CGImage maxSize:maxSize];
+            CGImageRef rotatedCGImage;
+            
+            if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationLandscapeLeft) {
+                if (self->_usingFrontCamera) {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
+                } else {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
+                }
+            } else if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationLandscapeRight) {
+                if (self->_usingFrontCamera) {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
+                } else {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
+                }
+            } else if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationPortrait) {
+                if (self->_usingFrontCamera) {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+                } else {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
+                }
+            } else {
+                if (self->_usingFrontCamera) {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
+                } else {
+                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+                }
+            }
+            
+            CGImageRelease(CGImage);
+            
+            // Remove orientation metadata
+            [imageMetadata removeObjectForKey:(NSString *)kCGImagePropertyOrientation];
+            
+            // Remove TIFF metadata
+            [imageMetadata removeObjectForKey:(NSString *)kCGImagePropertyTIFFDictionary];
+            
+            // Create destination thing
+            NSMutableData *rotatedImageData = [NSMutableData data];
+            CGImageDestinationRef destinationRef = CGImageDestinationCreateWithData((CFMutableDataRef)rotatedImageData, CGImageSourceGetType(source), 1, NULL);
+            CFRelease(source);
+            
+            // Set compression
+            NSDictionary *properties = @{(__bridge NSString *)kCGImageDestinationLossyCompressionQuality : @(jpegQuality)};
+            CGImageDestinationSetProperties(destinationRef, (__bridge CFDictionaryRef)properties);
+            
+            // Add the image to the destination and add metadata
+            CGImageDestinationAddImage(destinationRef, rotatedCGImage, (CFDictionaryRef)imageMetadata);
+            
+            // Write
+            CGImageDestinationFinalize(destinationRef);
+            CFRelease(destinationRef);
+            [self saveImage:rotatedImageData target:captureTarget metadata:imageMetadata successCallback:successCallback errorCallback:errorCallback];
+        } else {
+            errorCallback(@[error.description]);
+        }
+    }];
+}
+
+- (CGImageRef)newCGImageRotatedByAngle:(CGImageRef)imageRef angle:(CGFloat)angle {
+    CGFloat angleInRadians = angle * (M_PI / 180);
+    CGFloat width = CGImageGetWidth(imageRef);
+    CGFloat height = CGImageGetHeight(imageRef);
+    CGRect imageRect = CGRectMake(0, 0, width, height);
+    CGAffineTransform transform = CGAffineTransformMakeRotation(angleInRadians);
+    CGRect rotatedRect = CGRectApplyAffineTransform(imageRect, transform);
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bitmapContext = CGBitmapContextCreate(NULL, rotatedRect.size.width, rotatedRect.size.height, 8, 0, colorSpace, (CGBitmapInfo)kCGImageAlphaPremultipliedFirst);
+    CGContextSetAllowsAntialiasing(bitmapContext, TRUE);
+    CGContextSetInterpolationQuality(bitmapContext, kCGInterpolationNone);
+    CGColorSpaceRelease(colorSpace);
+    CGContextTranslateCTM(bitmapContext, +(rotatedRect.size.width / 2), +(rotatedRect.size.height / 2));
+    CGContextRotateCTM(bitmapContext, angleInRadians);
+    CGContextTranslateCTM(bitmapContext, -(rotatedRect.size.width), -(rotatedRect.size.height / 2));
+    CGContextDrawImage(bitmapContext, CGRectMake((rotatedRect.size.width - width) / 2.0f, (rotatedRect.size.height - height) / 2.0f, width, height), imageRef);
+    CGImageRef rotatedImage = CGBitmapContextCreateImage(bitmapContext);
+    CFRelease(bitmapContext);
+    return rotatedImage;
+}
+    
+    - (CGImageRef)resizeCGImage:(CGImageRef)image maxSize:(int)maxSize {
+        size_t originalWidth = CGImageGetWidth(image);
+        size_t originalHeight = CGImageGetHeight(image);
+        
+        // Only resize if image larger than maxSize
+        if (originalWidth <= maxSize && originalHeight <= maxSize) {
+            return image;
+        }
+        
+        size_t newWidth = originalWidth;
+        size_t newHeight = originalHeight;
+        
+        // Width
+        if (originalWidth > maxSize) {
+            newWidth = maxSize;
+            newHeight = (newWidth * originalHeight) / originalWidth;
+        }
+        
+        // Height
+        if (newHeight > maxSize) {
+            newHeight = maxSize;
+            newWidth = (newHeight * originalWidth) / originalHeight;
+        }
+        
+        // Create new context
+        CGColorSpaceRef colorSpace = CGImageGetColorSpace(image);
+        CGContextRef context = CGBitmapContextCreate(NULL, newWidth, newHeight, CGImageGetBitsPerComponent(image), CGImageGetBytesPerRow(image), colorSpace, CGImageGetAlphaInfo(image));
+        CGColorSpaceRelease(colorSpace);
+        
+        if (context == NULL) {
+            return image;
+        }
+        
+        // Draw image to context
+        CGContextDrawImage(context, CGRectMake(0, 0, newWidth, newHeight), image);
+        
+        // Extract resulting image from context
+        CGImageRef imageRef = CGBitmapContextCreateImage(context);
+        CGContextRelease(context);
+        
+        return imageRef;
+    };
+    
+- (void)saveImage:(NSData *)imageData target:(NSInteger)target metadata:(NSDictionary *)metadata successCallback:(RCTResponseSenderBlock)successCallback errorCallback:(RCTResponseSenderBlock)errorCallback {
+        if (target == RCT_CAMERA_CAPTURE_TARGET_MEMORY) {
+            NSString *base64EncodedImage = [imageData base64EncodedDataWithOptions:0];
+            successCallback(@[base64EncodedImage]);
+            return;
+        }
+    
+    if (target == RCT_CAMERA_CAPTURE_TARGET_DISK) {
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *documentsDirectory = [paths firstObject];
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        NSString *fullPath = [[documentsDirectory stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]] stringByAppendingPathExtension:@"jpg"];
+        [fileManager createFileAtPath:fullPath contents:imageData attributes:nil];
+        successCallback(@[fullPath]);
+        return;
+    }
+    
+    if (target == RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL) {
+        [[[ALAssetsLibrary alloc] init] writeImageDataToSavedPhotosAlbum:imageData metadata:metadata completionBlock:^(NSURL *url, NSError *error) {
+            if (error) {
+                errorCallback(@[error.description]);
+                return;
+            }
+            
+            successCallback(@[[url absoluteString]]);
+            return;
+        }];
+        return;
+    }
+    
+    if (target == RCT_CAMERA_CAPTURE_TARGET_TEMP) {
+        NSString *fileName = [[NSProcessInfo processInfo] globallyUniqueString];
+        NSString *fullPath = [NSString stringWithFormat:@"%@%@.jpg", NSTemporaryDirectory(), fileName];
+        
+        // @TODO: check if image successfully stored
+        [imageData writeToFile:fullPath atomically:YES];
+        successCallback(@[fullPath]);
+        return;
+    }
+    };
+    
+    
+
 
 - (instancetype)initWithCapturer:(RTCCameraVideoCapturer *)capturer andConstraints:(NSDictionary *)constraints {
     self = [super init];
@@ -88,6 +286,23 @@
                             if (err) {
                                 RCTLogError(@"[VideoCaptureController] Error starting capture: %@", err);
                             } else {
+                                AVCaptureSession *capSession = _capturer.captureSession;
+                                if (stillImageOutput != nil) {
+                                    [capSession removeOutput:stillImageOutput];
+                                    stillImageOutput = nil;
+                                }
+                                
+                                stillImageOutput = [[AVCaptureStillImageOutput alloc] init];
+                                [stillImageOutput setHighResolutionStillImageOutputEnabled:true];
+                                NSDictionary *outputSettings = @{AVVideoCodecKey : AVVideoCodecJPEG};
+                                [stillImageOutput setOutputSettings:outputSettings];
+                                
+                                if ([capSession canAddOutput:stillImageOutput]) {
+                                    [capSession addOutput:stillImageOutput];
+                                } else {
+                                    NSLog(@"[VideoCaptureController] Failed to add stillImageOutput, snapshot is not working");
+                                }
+                                
                                 RCTLog(@"[VideoCaptureController] Capture started");
                                 weakSelf.running = YES;
                             }
@@ -107,6 +322,10 @@
 
     __weak VideoCaptureController *weakSelf = self;
     [self.capturer stopCaptureWithCompletionHandler:^{
+        if (stillImageOutput != nil) {
+            stillImageOutput = nil;
+        }
+        
         RCTLog(@"[VideoCaptureController] Capture stopped");
         weakSelf.running = NO;
         weakSelf.device = nil;

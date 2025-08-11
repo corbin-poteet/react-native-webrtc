@@ -223,7 +223,7 @@ export default class MediaStreamTrack extends EventTarget<MediaStreamTrackEventM
 
         const nativeOptions = convertToNativeOptions(options);
 
-        WebRTCModule._takeSnapshot(nativeOptions, this.id, successCallback, errorCallback);
+        WebRTCModule.takePicture(nativeOptions, this.id, successCallback, errorCallback);
     }
 
     /**
