@@ -18,6 +18,24 @@
 
 @implementation WebRTCModule (RTCMediaStream)
 
+typedef NS_ENUM(NSInteger, RCTCameraCaptureTarget) {
+    RCT_CAMERA_CAPTURE_TARGET_MEMORY = 0,
+    RCT_CAMERA_CAPTURE_TARGET_DISK = 1,
+    RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL = 2,
+    RCT_CAMERA_CAPTURE_TARGET_TEMP = 3,
+}
+
+    - (NSDictionary *)constantsToExport {
+    return @{
+        @"CaptureTarget" : @{
+            @"MEMORY" : @(RCT_CAMERA_CAPTURE_TARGET_MEMORY),
+            @"DISK" : @(RCT_CAMERA_CAPTURE_TARGET_DISK),
+            @"CAMERA_ROLL" : @(RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL),
+            @"TEMP" : @(RCT_CAMERA_CAPTURE_TARGET_TEMP),
+        }
+    };
+}
+
 - (VideoEffectProcessor *)videoEffectProcessor {
     return objc_getAssociatedObject(self, _cmd);
 }
@@ -495,6 +513,29 @@ RCT_EXPORT_METHOD(mediaStreamTrackSetVideoEffects : (nonnull NSString *)trackID 
     }
 
     return peerConnection.remoteTracks[trackId];
+}
+
+RCT_EXPORT_METHOD(takePicture : (NSDictionary *)options trackID : (nonnull NSString *)trackID successCallback : (
+    RCTResponseSenderBlock)successCallback errorCallback : (RCTResponseSenderBlock)errorCallback) {
+    RTCMediaStreamTrack *track = self.localTracks[trackID];
+    if (track == nil || !track.isEnabled) {
+        errorCallback(@[ [NSString stringWithFormat:@"Track with id %@ is not enabled or does not exist", trackID] ]);
+        return;
+    }
+
+    RTCVideoTrack *videoTrack = (RTCVideoTrack *)track;
+    if (videoTrack == nil) {
+        errorCallback(@[ [NSString stringWithFormat:@"Track with id %@ is not a video track", trackID] ]);
+        return;
+    }
+
+    VideoCaptureController *videoCaptureController = (VideoCaptureController *)videoTrack.captureController;
+    if (videoCaptureController == nil) {
+        errorCallback(@[ [NSString stringWithFormat:@"Track with id %@ has no capture controller", trackID] ]);
+        return;
+    }
+
+    [videoCaptureController takePicture:options successCallback:successCallback errorCallback:errorCallback];
 }
 
 @end

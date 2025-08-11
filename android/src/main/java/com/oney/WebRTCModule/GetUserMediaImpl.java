@@ -48,6 +48,9 @@ class GetUserMediaImpl {
     private CameraEnumerator cameraEnumerator;
     private final ReactApplicationContext reactContext;
 
+    private final HandlerThread imageProcessingThread;
+    private Handler imageProcessingHandler;
+
     /**
      * The application/library-specific private members of local
      * {@link MediaStreamTrack}s created by {@code GetUserMediaImpl} mapped by
@@ -63,6 +66,10 @@ class GetUserMediaImpl {
     GetUserMediaImpl(WebRTCModule webRTCModule, ReactApplicationContext reactContext) {
         this.webRTCModule = webRTCModule;
         this.reactContext = reactContext;
+
+        imageProcessingThread = new HandlerThread("SnapshotThread");
+        imageProcessingThread.start();
+        imageProcessingHandler = new Handler(imageProcessingThread.getLooper());
 
         reactContext.addActivityEventListener(new BaseActivityEventListener() {
             @Override
@@ -170,6 +177,10 @@ class GetUserMediaImpl {
         return array;
     }
 
+    private ReactApplicationContext getReactApplicationContext() {
+        return reactContext;
+    }
+
     MediaStreamTrack getTrack(String id) {
         TrackPrivate private_ = tracks.get(id);
 
@@ -202,8 +213,8 @@ class GetUserMediaImpl {
                 return;
             }
 
-            CameraCaptureController cameraCaptureController = new CameraCaptureController(
-                    currentActivity, getCameraEnumerator(), videoConstraintsMap);
+            CameraCaptureController cameraCaptureController =
+                    new CameraCaptureController(currentActivity, getCameraEnumerator(), videoConstraintsMap);
 
             videoTrack = createVideoTrack(cameraCaptureController);
         }
@@ -241,6 +252,9 @@ class GetUserMediaImpl {
         TrackPrivate track = tracks.remove(id);
         if (track != null) {
             track.dispose();
+
+            imageProcessingHandler.removeCallbacksAndMessages(null);
+            imageProcessingThread.quit();
         }
     }
 
@@ -519,6 +533,140 @@ class GetUserMediaImpl {
                 disposed = true;
             }
         }
+    }
+
+    public void takePicture(final ReadableMap options, final String trackId, final Callback successCallback,
+            final Callback errorCallback) {
+        final int captureTarget = options.getInt("captureTarget");
+        final double maxJpegQuality = options.getDouble("maxJpegQuality");
+        final int maxSize = options.getInt("maxSize");
+
+        if (!tracks.containsKey(trackId)) {
+            errorCallback.invoke("Invalid trackId " + trackId);
+            return;
+        }
+
+        VideoCapturer videoCapturer = tracks.get(trackId).videoCaptureController.getVideoCapturer();
+        if (!(videoCapturer instanceof CameraCapturer)) {
+            errorCallback.invoke("Track is not a CameraCapturer");
+            return;
+        }
+
+        CameraCapturer cameraCapturer = (CameraCapturer) videoCapturer;
+        cameraCapturer.takeSnapshot(new CameraCapturer.SingleCaptureCallBack() {
+            @Override
+            public void onCaptureSuccess(byte[] data) {
+                if (data == null || data.length == 0) {
+                    errorCallback.invoke("Snapshot data is empty");
+                    return;
+                }
+
+                if (captureTarget == WebRTCModule.RCT_CAMERA_CAPTURE_TARGET_MEMORY) {
+                    successCallback.invoke(Base64.getEncoder().encodeToString(data));
+                    return;
+                }
+
+                try {
+                    String path = savePicture(jpeg, captureTarget, maxJpegQuality, maxSize);
+                    successCallback.invoke(path);
+                } catch (IOException e) {
+                    errorCallback.invoke("Error saving picture: " + e.getMessage());
+                }
+            }
+
+            @Override
+            public void onCaptureError(String error) {
+                errorCallback.invoke(error);
+            }
+        }, this.imageProcessingHandler);
+    }
+
+    private synchronized String savePicture(byte[] jpeg, int captureTarget, double maxJpegQuality, int maxSize)
+            throws IOException {
+        String fileName = "snapshot_" + System.currentTimeMillis();
+        File file;
+        switch (captureTarget) {
+            case WebRTCModule.RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL: {
+                file = getOutputCameraRollFile(fileName);
+                writePictureToFile(jpeg, file, maxJpegQuality, maxSize);
+                addToMediaStore(file.getAbsolutePath());
+                break;
+            }
+            case WebRTCModule.RCT_CAMERA_CAPTURE_TARGET_DISK: {
+                file = getOutputMediaFile(fileName);
+                writePictureToFile(jpeg, file, maxJpegQuality, maxSize);
+                break;
+            }
+            case WebRTCModule.RCT_CAMERA_CAPTURE_TARGET_TEMP: {
+                file = getTempMediaFile(fileName);
+                writePictureToFile(jpeg, file, maxJpegQuality, maxSize);
+                break;
+            }
+            default: {
+                throw new IllegalArgumentException("Invalid capture target: " + captureTarget);
+            }
+        }
+
+        return Uri.fromFile(file).toString();
+    }
+
+    private String writePictureToFile(byte[] jpeg, File file, int maxSize, double jpegQuality) throws IOException {
+        FileOutputStream fos = new FileOutputStream(file);
+        fos.write(jpeg);
+        fos.close();
+        Matrix matrix = new Matrix();
+
+        Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+
+        if (width > maxSize || height > maxSize) {
+            float scale = (float) maxSize / Math.max(width, height);
+            matrix.postScale(scale, scale);
+        }
+
+        FileOutputStream outputStream = new FileOutputStream(file);
+        int quality = (int) (jpegQuality * 100);
+        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+        rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream);
+        outputStream.close();
+
+        return file.getAbsolutePath();
+    }
+
+    private File getOutputMediaFile(String fileName) {
+        return getOutputFile(fileName + ".jpeg", Environment.getStoragePublicDirectory(Environment.DIRECTORY_PICTURES));
+    }
+
+    private File getOutputCameraRollFile(String fileName) {
+        return getOutputFile(
+                fileName + ".jpeg", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM));
+    }
+
+    private File getOutputFile(String fileName, File directory) {
+        if (!directory.exists() && !directory.mkdirs()) {
+            Log.e(TAG, "Failed to create directory: " + directory.getAbsolutePath());
+            return null;
+        }
+
+        return new File(directory, fileName);
+    }
+
+    private Fie getTempMediaFile(String fileName) {
+        try {
+            File outputDir = getReactApplicationContext().getCacheDir();
+            return File.createTempFile(fileName, ".jpeg", outputDir);
+        } catch (IOException e) {
+            Log.e(TAG, "Error creating temporary file: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void addToMediaStore(String filePath) {
+        MediaScannerConnection.scanFile(reactContext, new String[] {filePath}, null, (path, uri) -> {
+            Log.d(TAG, "Added to MediaStore: " + path);
+        });
     }
 
     public interface BiConsumer<T, U> {

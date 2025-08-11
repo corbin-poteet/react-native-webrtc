@@ -14,4 +14,6 @@ examples/GumTestApp_macOS/package-lock.json
 *.zip
 lib/
 src/*.js
+android/.gradle
+.vscode
 

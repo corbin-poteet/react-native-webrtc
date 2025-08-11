@@ -1418,6 +1418,40 @@ public class WebRTCModule extends ReactContextBaseJavaModule {
         });
     }
 
+    public static final int RCT_CAMERA_CAPTURE_TARGET_MEMORY = 0;
+    public static final int RCT_CAMERA_CAPTURE_TARGET_DISK = 1;
+    public static final int RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL = 2;
+    public static final int RCT_CAMERA_CAPTURE_TARGET_TEMP = 3;
+
+    @Override
+    public Map<String, Object> getConstants() {
+        final Map<String, Object> constants = new HashMap<>();
+        constants.put("CaptureTarget", getCaptureTargetConstants());
+        return constants;
+    }
+
+    private Map<String, Object> getCaptureTargetConstants() {
+        final Map<String, Object> captureTargetConstants = new HashMap<>();
+        captureTargetConstants.put("MEMORY", RCT_CAMERA_CAPTURE_TARGET_MEMORY);
+        captureTargetConstants.put("DISK", RCT_CAMERA_CAPTURE_TARGET_DISK);
+        captureTargetConstants.put("CAMERA_ROLL", RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL);
+        captureTargetConstants.put("TEMP", RCT_CAMERA_CAPTURE_TARGET_TEMP);
+        return captureTargetConstants;
+    }
+
+    @ReactMethod
+    public void takePicture(final ReadableMap options, final String trackId, final Callback successCallback,
+            final Callback errorCallback) {
+        ThreadUtils.runOnExecutor(() -> {
+            try {
+                getUserMediaImpl.takePicture(options, trackId, successCallback, errorCallback);
+            } catch (Exception e) {
+                Log.e(TAG, "takePicture() failed: " + e.getMessage());
+                errorCallback.invoke(e.getMessage());
+            }
+        });
+    }
+
     @ReactMethod
     public void addListener(String eventName) {
         // Keep: Required for RN built in Event Emitter Calls.

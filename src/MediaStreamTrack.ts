@@ -38,6 +38,26 @@ type MediaStreamTrackEventMap = {
     unmute: Event<'unmute'>;
 }
 
+type SnapshotOptions = {
+    captureTarget: string;
+    maxSize: number;
+    maxJpegQuality: number;
+}
+
+function convertToNativeOptions(options: SnapshotOptions): SnapshotOptions {
+    const mutableDefaults = { maxSize: 2000, maxJpegQuality: 1.0 };
+
+    mutableDefaults.maxSize = MediaStreamTrack.defaults.maxSize;
+    mutableDefaults.maxJpegQuality = MediaStreamTrack.defaults.maxJpegQuality;
+    const mergedOptions = Object.assign(mutableDefaults, options);
+
+    if (typeof mergedOptions.captureTarget === 'string') {
+        mergedOptions.captureTarget = WebRTCModule.CaptureTarget[options.captureTarget];
+    }
+
+    return mergedOptions;
+}
+
 export default class MediaStreamTrack extends EventTarget<MediaStreamTrackEventMap> {
     _constraints: MediaTrackConstraints;
     _enabled: boolean;
@@ -50,6 +70,21 @@ export default class MediaStreamTrack extends EventTarget<MediaStreamTrackEventM
     readonly kind: string;
     readonly label: string = '';
     readonly remote: boolean;
+
+    static constants = {
+        captureTarget: {
+            MEMORY: 'MEMORY',
+            DISK: 'DISK',
+            CAMERA_ROLL: 'CAMERA_ROLL',
+            TEMP: 'TEMP',
+        }
+    };
+
+    static defaults = {
+        captureTarget: MediaStreamTrack.constants.captureTarget.TEMP,
+        maxSize: 5000,
+        maxJpegQuality: 1.0,
+    };
 
     constructor(info: MediaStreamTrackInfo) {
         super();
@@ -169,6 +204,26 @@ export default class MediaStreamTrack extends EventTarget<MediaStreamTrackEventM
         }
 
         WebRTCModule.mediaStreamTrackSetVolume(this.remote ? this._peerConnectionId : -1, this.id, volume);
+    }
+
+    /**
+     * Takes a snapshot of the video track and returns a base64 encoded JPEG image.
+     *
+     * @param options Options for the snapshot, such as capture target, max size, and max JPEG quality.
+     * @returns A promise that resolves with the base64 encoded JPEG image.
+     */
+    _takeSnapshot(
+        options: SnapshotOptions,
+        successCallback: (path: string) => void,
+        errorCallback: (error: Error) => void
+    ) {
+        if (this.kind !== 'video') {
+            throw new Error('Only implemented for video tracks');
+        }
+
+        const nativeOptions = convertToNativeOptions(options);
+
+        WebRTCModule._takeSnapshot(nativeOptions, this.id, successCallback, errorCallback);
     }
 
     /**
