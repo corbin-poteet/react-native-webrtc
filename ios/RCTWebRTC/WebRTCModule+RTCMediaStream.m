@@ -23,7 +23,7 @@ typedef NS_ENUM(NSInteger, RCTCameraCaptureTarget) {
     RCT_CAMERA_CAPTURE_TARGET_DISK = 1,
     RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL = 2,
     RCT_CAMERA_CAPTURE_TARGET_TEMP = 3,
-}
+};
 
     - (NSDictionary *)constantsToExport {
     return @{
