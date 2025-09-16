@@ -46,69 +46,84 @@ AVCaptureStillImageOutput *stillImageOutput = nil;
         jpegQuality = 1;
     }
 
-    [stillImageOutput captureStillImageAsynchronouslyFromConnection:[stillImageOutput connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageDataSampleBuffer, NSError *error) {
-        if (imageDataSampleBuffer) {
-            NSData *imageData = [AVCaptureStillImageOutput jpegStillImageNSDataRepresentation:imageDataSampleBuffer];
-            CGImageSourceRef source = CGImageSourceCreateWithData((CFDataRef)imageData, NULL);
-            NSMutableDictionary *imageMetadata =
-                [(NSDictionary *)CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source, 0, NULL)) mutableCopy];
-            CGImageRef CGImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
-            CGImage = [self resizeCGImage:CGImage maxSize:maxSize];
-            CGImageRef rotatedCGImage;
+    [stillImageOutput
+        captureStillImageAsynchronouslyFromConnection:[stillImageOutput connectionWithMediaType:AVMediaTypeVideo]
+                                    completionHandler:^(CMSampleBufferRef imageDataSampleBuffer, NSError *error) {
+                                        if (imageDataSampleBuffer) {
+                                            NSData *imageData = [AVCaptureStillImageOutput
+                                                jpegStillImageNSDataRepresentation:imageDataSampleBuffer];
+                                            CGImageSourceRef source =
+                                                CGImageSourceCreateWithData((CFDataRef)imageData, NULL);
+                                            NSMutableDictionary *imageMetadata = [(NSDictionary *)CFBridgingRelease(
+                                                CGImageSourceCopyPropertiesAtIndex(source, 0, NULL)) mutableCopy];
+                                            CGImageRef CGImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+                                            CGImage = [self resizeCGImage:CGImage maxSize:maxSize];
+                                            CGImageRef rotatedCGImage;
 
-            if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationLandscapeLeft) {
-                if (self->_usingFrontCamera) {
-                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
-                } else {
-                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
-                }
-            } else if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationLandscapeRight) {
-                if (self->_usingFrontCamera) {
-                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
-                } else {
-                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
-                }
-            } else if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationPortrait) {
-                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
-            } else {
-                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
-            }
-        }
+                                            if ([[UIDevice currentDevice] orientation] ==
+                                                UIInterfaceOrientationLandscapeLeft) {
+                                                if (self->_usingFrontCamera) {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
+                                                } else {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
+                                                }
+                                            } else if ([[UIDevice currentDevice] orientation] ==
+                                                       UIInterfaceOrientationLandscapeRight) {
+                                                if (self->_usingFrontCamera) {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
+                                                } else {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
+                                                }
+                                            } else if ([[UIDevice currentDevice] orientation] ==
+                                                       UIInterfaceOrientationPortrait) {
+                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
+                                            } else {
+                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+                                            }
 
-        CGImageRelease(CGImage);
+                                            CGImageRelease(CGImage);
 
-        // Remove orientation metadata
-        [imageMetadata removeObjectForKey:(NSString *)kCGImagePropertyOrientation];
+                                            // Remove orientation metadata
+                                            [imageMetadata removeObjectForKey:(NSString *)kCGImagePropertyOrientation];
 
-        // Remove TIFF metadata
-        [imageMetadata removeObjectForKey:(NSString *)kCGImagePropertyTIFFDictionary];
+                                            // Remove TIFF metadata
+                                            [imageMetadata
+                                                removeObjectForKey:(NSString *)kCGImagePropertyTIFFDictionary];
 
-        // Create destination thing
-        NSMutableData *rotatedImageData = [NSMutableData data];
-        CGImageDestinationRef destinationRef =
-            CGImageDestinationCreateWithData((CFMutableDataRef)rotatedImageData, CGImageSourceGetType(source), 1, NULL);
-        CFRelease(source);
+                                            // Create destination thing
+                                            NSMutableData *rotatedImageData = [NSMutableData data];
+                                            CGImageDestinationRef destinationRef =
+                                                CGImageDestinationCreateWithData((CFMutableDataRef)rotatedImageData,
+                                                                                 CGImageSourceGetType(source),
+                                                                                 1,
+                                                                                 NULL);
+                                            CFRelease(source);
 
-        // Set compression
-        NSDictionary *properties = @{(__bridge NSString *)kCGImageDestinationLossyCompressionQuality : @(jpegQuality)};
-        CGImageDestinationSetProperties(destinationRef, (__bridge CFDictionaryRef)properties);
+                                            // Set compression
+                                            NSDictionary *properties = @{
+                                                (__bridge NSString *)
+                                                kCGImageDestinationLossyCompressionQuality : @(jpegQuality)
+                                            };
+                                            CGImageDestinationSetProperties(destinationRef,
+                                                                            (__bridge CFDictionaryRef)properties);
 
-        // Add the image to the destination and add metadata
-        CGImageDestinationAddImage(destinationRef, rotatedCGImage, (CFDictionaryRef)imageMetadata);
+                                            // Add the image to the destination and add metadata
+                                            CGImageDestinationAddImage(
+                                                destinationRef, rotatedCGImage, (CFDictionaryRef)imageMetadata);
 
-        // Write
-        CGImageDestinationFinalize(destinationRef);
-        CFRelease(destinationRef);
-        [self saveImage:rotatedImageData
-                     target:captureTarget
-                   metadata:imageMetadata
-            successCallback:successCallback
-              errorCallback:errorCallback];
-        } else {
-        errorCallback(@[ error.description ]);
-        }
-    ]
-};
+                                            // Write
+                                            CGImageDestinationFinalize(destinationRef);
+                                            CFRelease(destinationRef);
+                                            [self saveImage:rotatedImageData
+                                                         target:captureTarget
+                                                       metadata:imageMetadata
+                                                successCallback:successCallback
+                                                  errorCallback:errorCallback];
+                                        } else {
+                                            errorCallback(@[ error.description ]);
+                                        }
+                                    }];
+}
 
 - (CGImageRef)newCGImageRotatedByAngle:(CGImageRef)imageRef angle:(CGFloat)angle {
     CGFloat angleInRadians = angle * (M_PI / 180);
