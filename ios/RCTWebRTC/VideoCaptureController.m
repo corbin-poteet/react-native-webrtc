@@ -75,10 +75,12 @@ AVCaptureStillImageOutput *stillImageOutput = nil;
                                                     rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
                                                 }
                                             } else if ([[UIDevice currentDevice] orientation] ==
-                                                       UIInterfaceOrientationPortrait) {
-                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
-                                            } else {
+                                                       UIInterfaceOrientationPortraitUpsideDown) {
                                                 rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+                                            } else {
+                                                // There's a secret 4th orientation when the device is flat on a table
+                                                // We default to portrait for that
+                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
                                             }
 
                                             CGImageRelease(CGImage);
