@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.media.projection.MediaProjectionManager;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
@@ -537,50 +539,11 @@ class GetUserMediaImpl {
 
     public void takePicture(final ReadableMap options, final String trackId, final Callback successCallback,
             final Callback errorCallback) {
-        final int captureTarget = options.getInt("captureTarget");
-        final double maxJpegQuality = options.getDouble("maxJpegQuality");
-        final int maxSize = options.getInt("maxSize");
-
-        if (!tracks.containsKey(trackId)) {
-            errorCallback.invoke("Invalid trackId " + trackId);
-            return;
-        }
-
-        VideoCapturer videoCapturer = tracks.get(trackId).videoCaptureController.getVideoCapturer();
-        if (!(videoCapturer instanceof CameraCapturer)) {
-            errorCallback.invoke("Track is not a CameraCapturer");
-            return;
-        }
-
-        CameraCapturer cameraCapturer = (CameraCapturer) videoCapturer;
-        cameraCapturer.takeSnapshot(new CameraCapturer.SingleCaptureCallBack() {
-            @Override
-            public void onCaptureSuccess(byte[] data) {
-                if (data == null || data.length == 0) {
-                    errorCallback.invoke("Snapshot data is empty");
-                    return;
-                }
-
-                if (captureTarget == WebRTCModule.RCT_CAMERA_CAPTURE_TARGET_MEMORY) {
-                    successCallback.invoke(Base64.getEncoder().encodeToString(data));
-                    return;
-                }
-
-                try {
-                    String path = savePicture(jpeg, captureTarget, maxJpegQuality, maxSize);
-                    successCallback.invoke(path);
-                } catch (IOException e) {
-                    errorCallback.invoke("Error saving picture: " + e.getMessage());
-                }
-            }
-
-            @Override
-            public void onCaptureError(String error) {
-                errorCallback.invoke(error);
-            }
-        }, this.imageProcessingHandler);
+        // CameraCapturer not available in this version - feature temporarily disabled
+        errorCallback.invoke("takePicture is not supported in this version");
     }
 
+    /* Commented out - these methods are not needed without CameraCapturer support
     private synchronized String savePicture(byte[] jpeg, int captureTarget, double maxJpegQuality, int maxSize)
             throws IOException {
         String fileName = "snapshot_" + System.currentTimeMillis();
@@ -653,7 +616,7 @@ class GetUserMediaImpl {
         return new File(directory, fileName);
     }
 
-    private Fie getTempMediaFile(String fileName) {
+    private File getTempMediaFile(String fileName) {
         try {
             File outputDir = getReactApplicationContext().getCacheDir();
             return File.createTempFile(fileName, ".jpeg", outputDir);
@@ -668,6 +631,7 @@ class GetUserMediaImpl {
             Log.d(TAG, "Added to MediaStore: " + path);
         });
     }
+    */
 
     public interface BiConsumer<T, U> {
         void accept(T t, U u);
