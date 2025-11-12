@@ -3,7 +3,14 @@ package com.oney.WebRTCModule;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.graphics.Rect;
+import android.media.MediaScannerConnection;
 import android.media.projection.MediaProjectionManager;
+import android.net.Uri;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.DisplayMetrics;
@@ -27,7 +34,15 @@ import com.oney.WebRTCModule.videoEffects.VideoFrameProcessor;
 
 import org.webrtc.*;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -503,7 +518,7 @@ class GetUserMediaImpl {
          *                               {@code track} is a {@link VideoTrack}
          */
         public TrackPrivate(MediaStreamTrack track, MediaSource mediaSource,
-                AbstractVideoCaptureController videoCaptureController, SurfaceTextureHelper surfaceTextureHelper) {
+                            AbstractVideoCaptureController videoCaptureController, SurfaceTextureHelper surfaceTextureHelper) {
             this.track = track;
             this.mediaSource = mediaSource;
             this.videoCaptureController = videoCaptureController;
@@ -538,12 +553,48 @@ class GetUserMediaImpl {
     }
 
     public void takePicture(final ReadableMap options, final String trackId, final Callback successCallback,
-            final Callback errorCallback) {
-        // CameraCapturer not available in this version - feature temporarily disabled
-        errorCallback.invoke("takePicture is not supported in this version");
+                            final Callback errorCallback) {
+        final int captureTarget = options.getInt("captureTarget");
+        final double maxJpegQuality = options.getDouble("maxJpegQuality");
+        final int maxSize = options.getInt("maxSize");
+        Log.w(TAG, "inside take picture");
+        if (!tracks.containsKey(trackId)) {
+            errorCallback.invoke("Invalid trackId " + trackId);
+            return;
+        }
+
+        VideoCapturer vc = tracks.get(trackId).videoCaptureController.getVideoCapturer();
+        Log.w(TAG, "no problem getting video captuerer");
+        if (!(vc instanceof CameraCapturer)) {
+            errorCallback.invoke("Wrong class in package");
+        } else {
+            CameraCapturer camCap = (CameraCapturer) vc;
+            camCap.takeSnapshot(new CameraCapturer.SingleCaptureCallBack() {
+                @Override
+                public void captureSuccess(byte[] jpeg) {
+                    if (captureTarget == WebRTCModule.RCT_CAMERA_CAPTURE_TARGET_MEMORY) {
+                        Log.w(TAG, "Yippeee");
+                        successCallback.invoke(Base64.getEncoder().encodeToString(jpeg));
+                    } else {
+                        try {
+                            String path = savePicture(jpeg, captureTarget, maxJpegQuality, maxSize);
+                            successCallback.invoke(path);
+                        } catch (IOException e) {
+                            String message = "Error saving picture";
+                            Log.d(TAG, message, e);
+                            errorCallback.invoke(message);
+                        }
+                    }
+                }
+
+                @Override
+                public void captureFailed(String err) {
+                    errorCallback.invoke(err);
+                }
+            }, this.imageProcessingHandler);
+        }
     }
 
-    /* Commented out - these methods are not needed without CameraCapturer support
     private synchronized String savePicture(byte[] jpeg, int captureTarget, double maxJpegQuality, int maxSize)
             throws IOException {
         String fileName = "snapshot_" + System.currentTimeMillis();
@@ -573,7 +624,7 @@ class GetUserMediaImpl {
         return Uri.fromFile(file).toString();
     }
 
-    private String writePictureToFile(byte[] jpeg, File file, int maxSize, double jpegQuality) throws IOException {
+    private String writePictureToFile(byte[] jpeg, File file, double maxSize, double jpegQuality) throws IOException {
         FileOutputStream fos = new FileOutputStream(file);
         fos.write(jpeg);
         fos.close();
@@ -599,7 +650,7 @@ class GetUserMediaImpl {
     }
 
     private File getOutputMediaFile(String fileName) {
-        return getOutputFile(fileName + ".jpeg", Environment.getStoragePublicDirectory(Environment.DIRECTORY_PICTURES));
+        return getOutputFile(fileName + ".jpeg", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES));
     }
 
     private File getOutputCameraRollFile(String fileName) {
@@ -631,7 +682,6 @@ class GetUserMediaImpl {
             Log.d(TAG, "Added to MediaStore: " + path);
         });
     }
-    */
 
     public interface BiConsumer<T, U> {
         void accept(T t, U u);
