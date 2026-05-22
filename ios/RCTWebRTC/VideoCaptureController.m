@@ -61,14 +61,14 @@ AVCaptureStillImageOutput *stillImageOutput = nil;
                                             CGImageRef rotatedCGImage;
 
                                             if ([[UIDevice currentDevice] orientation] ==
-                                                UIInterfaceOrientationLandscapeLeft) {
+                                                UIInterfaceOrientationLandscapeRight) {
                                                 if (self->_usingFrontCamera) {
                                                     rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
                                                 } else {
                                                     rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
                                                 }
                                             } else if ([[UIDevice currentDevice] orientation] ==
-                                                       UIInterfaceOrientationLandscapeRight) {
+                                                       UIInterfaceOrientationLandscapeLeft) {
                                                 if (self->_usingFrontCamera) {
                                                     rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
                                                 } else {
