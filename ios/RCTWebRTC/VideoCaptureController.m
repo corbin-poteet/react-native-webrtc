@@ -61,19 +61,11 @@ AVCaptureStillImageOutput *stillImageOutput = nil;
                                             CGImageRef rotatedCGImage;
 
                                             if ([[UIDevice currentDevice] orientation] ==
-                                                UIInterfaceOrientationLandscapeRight) {
-                                                if (self->_usingFrontCamera) {
-                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
-                                                } else {
-                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
-                                                }
+                                                UIInterfaceOrientationLandscapeLeft) {
+                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
                                             } else if ([[UIDevice currentDevice] orientation] ==
-                                                       UIInterfaceOrientationLandscapeLeft) {
-                                                if (self->_usingFrontCamera) {
-                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
-                                                } else {
-                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
-                                                }
+                                                       UIInterfaceOrientationLandscapeRight) {
+                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
                                             } else if ([[UIDevice currentDevice] orientation] ==
                                                        UIInterfaceOrientationPortraitUpsideDown) {
                                                 rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
