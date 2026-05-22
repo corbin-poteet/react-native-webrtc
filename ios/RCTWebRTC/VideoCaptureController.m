@@ -60,20 +60,27 @@ AVCaptureStillImageOutput *stillImageOutput = nil;
                                             CGImage = [self resizeCGImage:CGImage maxSize:maxSize];
                                             CGImageRef rotatedCGImage;
 
-                                            if ([[UIDevice currentDevice] orientation] ==
-                                                UIInterfaceOrientationLandscapeLeft) {
+                                            if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationLandscapeLeft) {
                                                 rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:180];
-                                            } else if ([[UIDevice currentDevice] orientation] ==
-                                                       UIInterfaceOrientationLandscapeRight) {
+                                            } else if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationLandscapeRight) {
                                                 rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:0];
-                                            } else if ([[UIDevice currentDevice] orientation] ==
-                                                       UIInterfaceOrientationPortraitUpsideDown) {
-                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+                                            } else if ([[UIDevice currentDevice] orientation] == UIInterfaceOrientationPortraitUpsideDown) {
+                                                if (self->_usingFrontCamera) {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
+                                                } else {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+                                                }
                                             } else {
                                                 // There's a secret 4th orientation when the device is flat on a table
                                                 // We default to portrait for that
-                                                rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
+                                                if (self->_usingFrontCamera) {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:90];
+
+                                                } else {
+                                                    rotatedCGImage = [self newCGImageRotatedByAngle:CGImage angle:270];
+                                                }
                                             }
+
 
                                             CGImageRelease(CGImage);
 
